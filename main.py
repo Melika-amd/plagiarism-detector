@@ -2,68 +2,151 @@ import spacy
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
+from typing import List, Dict
+import re
+from collections import Counter
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 
 nlp = spacy.load("en_core_web_sm")
 
+app = FastAPI(
+    title="Plagiarism Detection API",
+    description="API for detecting plagiarism and patchwriting using NLP techniques",
+    version="1.0.0"
+)
 
-app = FastAPI()
+templates = Jinja2Templates(directory="templates")
+
+@app.get("/check")
+async def check_form(request: Request):
+    return templates.TemplateResponse("check.html", {"request": request})
 
 class Document(BaseModel):
-    text: str
+    text: str = Field(..., min_length=10, description="Text content to analyze")
 
 class ComparisonRequest(BaseModel):
-    original: str
-    submission: str
+    original: str = Field(..., min_length=10, description="Original text")
+    submission: str = Field(..., min_length=10, description="Submitted text to check")
 
-def preprocess_text(text):
+class SimilarityMatch(BaseModel):
+    submission_sentence: str
+    original_sentence: str
+    similarity: float
+    match_type: str
+
+class PlagiarismResponse(BaseModel):
+    overall_similarity: float
+    similar_sentences: List[Dict]
+    patchwriting_detected: bool
+    text_statistics: Dict
+    ngram_matches: List[Dict]
+    similarity_metrics: Dict
+
+def get_text_statistics(text: str) -> Dict:
     doc = nlp(text)
-    return " ".join([token.lemma_.lower() for token in doc if not token.is_stop and not token.is_punct])
+    word_tokens = [token for token in doc if not token.is_punct]
+    return {
+        "word_count": len(word_tokens),
+        "sentence_count": len(list(doc.sents)),
+        "average_word_length": np.mean([len(token.text) for token in word_tokens]),
+        "unique_words": len(set([token.text.lower() for token in word_tokens])),
+    }
 
-def calculate_similarity(text1, text2):
+def extract_ngrams(text: str, n: int) -> List[str]:
+    words = [token.text.lower() for token in nlp(text) if not token.is_punct and not token.is_stop]
+    return [' '.join(words[i:i+n]) for i in range(len(words)-n+1)]
+
+def find_ngram_matches(original: str, submission: str, n: int = 3) -> List[Dict]:
+    original_ngrams = extract_ngrams(original, n)
+    submission_ngrams = extract_ngrams(submission, n)
+    
+    matches = []
+    for i, sub_ngram in enumerate(submission_ngrams):
+        if sub_ngram in original_ngrams:
+            matches.append({
+                "ngram": sub_ngram,
+                "position": i,
+                "length": n
+            })
+    return matches
+
+def calculate_similarity_metrics(text1: str, text2: str) -> Dict:
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform([text1, text2])
-    return cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+    cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+    
+    set1 = set(text1.lower().split())
+    set2 = set(text2.lower().split())
+    jaccard = len(set1.intersection(set2)) / len(set1.union(set2))
+    
+    return {
+        "cosine_similarity": float(cosine_sim),
+        "jaccard_similarity": float(jaccard)
+    }
 
-def detect_patchwriting(original, submission):
+def preprocess_text(text: str) -> str:
+    doc = nlp(text)
+    tokens = [token.lemma_.lower() for token in doc 
+              if not token.is_stop and not token.is_punct and len(token.text.strip()) > 1]
+    return " ".join(tokens)
 
+def detect_patchwriting(original: str, submission: str) -> Dict:
     preprocessed_original = preprocess_text(original)
     preprocessed_submission = preprocess_text(submission)
     
-
-    similarity = calculate_similarity(preprocessed_original, preprocessed_submission)
+    similarity_metrics = calculate_similarity_metrics(preprocessed_original, preprocessed_submission)
     
-
-    original_sentences = [sent.text for sent in nlp(original).sents]
-    submission_sentences = [sent.text for sent in nlp(submission).sents]
+    original_sentences = [sent.text.strip() for sent in nlp(original).sents]
+    submission_sentences = [sent.text.strip() for sent in nlp(submission).sents]
     
-
     similar_sentences = []
-    for i, sub_sent in enumerate(submission_sentences):
-        for j, orig_sent in enumerate(original_sentences):
-            sent_similarity = calculate_similarity(preprocess_text(sub_sent), preprocess_text(orig_sent))
-            if sent_similarity > 0.8:  
+    for sub_sent in submission_sentences:
+        for orig_sent in original_sentences:
+            sent_similarity = calculate_similarity_metrics(
+                preprocess_text(sub_sent), 
+                preprocess_text(orig_sent)
+            )["cosine_similarity"]
+            
+            if sent_similarity > 0.8:
                 similar_sentences.append({
                     "submission_sentence": sub_sent,
                     "original_sentence": orig_sent,
-                    "similarity": sent_similarity
+                    "similarity": sent_similarity,
+                    "match_type": "High Similarity"
                 })
     
+    ngram_matches = find_ngram_matches(original, submission)
+    submission_stats = get_text_statistics(submission)
+    
     return {
-        "overall_similarity": similarity,
+        "overall_similarity": similarity_metrics["cosine_similarity"],
         "similar_sentences": similar_sentences,
-        "patchwriting_detected": len(similar_sentences) > 0 or similarity > 0.5
+        "patchwriting_detected": len(similar_sentences) > 0 or similarity_metrics["cosine_similarity"] > 0.5,
+        "text_statistics": submission_stats,
+        "ngram_matches": ngram_matches,
+        "similarity_metrics": similarity_metrics
     }
 
-@app.post("/check_plagiarism")
+@app.post("/check_plagiarism", response_model=PlagiarismResponse)
 async def check_plagiarism(request: ComparisonRequest):
     try:
+        if len(request.original.strip()) < 10 or len(request.submission.strip()) < 10:
+            raise HTTPException(
+                status_code=400,
+                detail="Both original and submission texts must be at least 10 characters long"
+            )
+        
         result = detect_patchwriting(request.original, request.submission)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the Plagiarism Detection API"}
 
 if __name__ == "__main__":
     import uvicorn

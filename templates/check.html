@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Plagiarism Checker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        div {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #444;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 150px;
+            font-family: inherit;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Plagiarism Checker</h1>
+    <form id="plagiarismForm">
+        <div>
+            <label for="original">Original Text:</label>
+            <textarea id="original" name="original" required placeholder="Paste the original text here..."></textarea>
+        </div>
+        <div>
+            <label for="submission">Text to Check:</label>
+            <textarea id="submission" name="submission" required placeholder="Paste the text you want to check for plagiarism..."></textarea>
+        </div>
+        <div>
+            <button type="submit">Check for Plagiarism</button>
+        </div>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('plagiarismForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const original = document.getElementById('original').value;
+            const submission = document.getElementById('submission').value;
+            
+            try {
+                const response = await fetch('/check_plagiarism', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ original, submission })
+                });
+                
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail);
+                
+                const resultDiv = document.getElementById('result');
+                resultDiv.innerHTML = `
+                    <h2>Results</h2>
+                    <p>Overall Similarity: ${(data.overall_similarity * 100).toFixed(2)}%</p>
+                    <p>Patchwriting Detected: ${data.patchwriting_detected ? 'Yes' : 'No'}</p>
+                    
+                    <h3>Similar Sentences:</h3>
+                    ${data.similar_sentences.map(match => `
+                        <div style="margin-bottom: 10px;">
+                            <p><strong>Submission:</strong> ${match.submission_sentence}</p>
+                            <p><strong>Original:</strong> ${match.original_sentence}</p>
+                            <p><strong>Similarity:</strong> ${(match.similarity * 100).toFixed(2)}%</p>
+                        </div>
+                    `).join('')}
+                    
+                    <h3>Text Statistics:</h3>
+                    <ul>
+                        <li>Word Count: ${data.text_statistics.word_count}</li>
+                        <li>Sentence Count: ${data.text_statistics.sentence_count}</li>
+                        <li>Unique Words: ${data.text_statistics.unique_words}</li>
+                    </ul>
+                `;
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html> 
