@@ -9,7 +9,7 @@ import re
 from collections import Counter
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 nlp = spacy.load("en_core_web_sm")
@@ -32,9 +32,13 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
 
-@app.get("/check", response_class=HTMLResponse)
-async def check_form(request: Request):
-    return templates.TemplateResponse("check.html", {"request": request})
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return FileResponse("static/index.html")
+
+@app.get("/check")
+async def check_endpoint():
+    return RedirectResponse(url="/")
 
 class Document(BaseModel):
     text: str = Field(..., min_length=10, description="Text content to analyze")
@@ -173,10 +177,6 @@ async def check_plagiarism(request: ComparisonRequest):
     except Exception as e:
         print(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error occurred")
-
-@app.get("/")
-async def root():
-    return RedirectResponse(url="/check")
 
 if __name__ == "__main__":
     import uvicorn

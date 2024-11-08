@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plagiarism Detector</title>
+    <link rel="icon" type="image/png" href="/static/fav.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/styles.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Plagiarism Detector</h1>
+            <p class="lead mb-0">Check your text for potential plagiarism and patchwriting</p>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="text-area-container">
+                    <h3>Original Text</h3>
+                    <textarea id="original" class="form-control" placeholder="Paste the original text here..."></textarea>
+                    <div class="word-count">Words: <span id="original-word-count">0</span></div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="text-area-container">
+                    <h3>Submission</h3>
+                    <textarea id="submission" class="form-control" placeholder="Paste the text to check here..."></textarea>
+                    <div class="word-count">Words: <span id="submission-word-count">0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center">
+            <button id="check-button" class="btn btn-primary btn-lg">
+                Check for Plagiarism
+            </button>
+            <div id="loading" class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Analyzing texts...</p>
+            </div>
+        </div>
+
+        <div id="results">
+            <h2 class="mb-4">Analysis Results</h2>
+            
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4>Overall Similarity:</h4>
+                <span id="similarity" class="similarity-badge badge bg-primary"></span>
+            </div>
+            
+            <div id="patchwriting-warning" class="alert alert-danger" style="display: none;"></div>
+            
+            <div class="stats-container mb-4">
+                <div class="stat-card">
+                    <h5>Word Count</h5>
+                    <span id="word-count">-</span>
+                </div>
+                <div class="stat-card">
+                    <h5>Sentence Count</h5>
+                    <span id="sentence-count">-</span>
+                </div>
+                <div class="stat-card">
+                    <h5>Unique Words</h5>
+                    <span id="unique-words">-</span>
+                </div>
+            </div>
+
+            <h4>Similar Sentences</h4>
+            <div id="similar-sentences"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html> 
