@@ -9,6 +9,8 @@ import re
 from collections import Counter
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 nlp = spacy.load("en_core_web_sm")
 
@@ -18,9 +20,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 templates = Jinja2Templates(directory="templates")
 
-@app.get("/check")
+@app.get("/check", response_class=HTMLResponse)
 async def check_form(request: Request):
     return templates.TemplateResponse("check.html", {"request": request})
 
@@ -94,8 +106,14 @@ def preprocess_text(text: str) -> str:
     return " ".join(tokens)
 
 def detect_patchwriting(original: str, submission: str) -> Dict:
-    preprocessed_original = preprocess_text(original)
-    preprocessed_submission = preprocess_text(submission)
+    if not original or not submission:
+        raise ValueError("Both original and submission texts must be provided")
+        
+    try:
+        preprocessed_original = preprocess_text(original)
+        preprocessed_submission = preprocess_text(submission)
+    except Exception as e:
+        raise ValueError(f"Error processing text: {str(e)}")
     
     similarity_metrics = calculate_similarity_metrics(preprocessed_original, preprocessed_submission)
     
@@ -133,21 +151,33 @@ def detect_patchwriting(original: str, submission: str) -> Dict:
 @app.post("/check_plagiarism", response_model=PlagiarismResponse)
 async def check_plagiarism(request: ComparisonRequest):
     try:
-        if len(request.original.strip()) < 10 or len(request.submission.strip()) < 10:
+        original = request.original.strip()
+        submission = request.submission.strip()
+        
+        if len(original) < 10 or len(submission) < 10:
             raise HTTPException(
                 status_code=400,
                 detail="Both original and submission texts must be at least 10 characters long"
             )
         
-        result = detect_patchwriting(request.original, request.submission)
+        if len(original) > 50000 or len(submission) > 50000:
+            raise HTTPException(
+                status_code=400,
+                detail="Text length exceeds maximum limit of 50,000 characters"
+            )
+        
+        result = detect_patchwriting(original, submission)
         return result
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error occurred")
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the Plagiarism Detection API"}
+    return RedirectResponse(url="/check")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

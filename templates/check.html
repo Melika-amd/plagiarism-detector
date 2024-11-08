@@ -5,113 +5,151 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 20px auto;
+            max-width: 1000px;
+            margin: 0 auto;
             padding: 20px;
-            background-color: #f5f5f5;
         }
-        h1 {
-            color: #333;
-            text-align: center;
-        }
-        form {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        div {
+        .form-group {
             margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            color: #444;
         }
         textarea {
             width: 100%;
+            min-height: 200px;
+            margin-top: 5px;
+        }
+        .results {
+            margin-top: 20px;
+            display: none;
+        }
+        .similarity-score {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .match {
+            background-color: #fff3cd;
             padding: 10px;
-            border: 1px solid #ddd;
+            margin: 10px 0;
             border-radius: 4px;
-            resize: vertical;
-            min-height: 150px;
-            font-family: inherit;
         }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            width: 100%;
+        .warning {
+            color: #dc3545;
         }
-        button:hover {
-            background-color: #45a049;
+        .loading {
+            display: none;
+            margin: 20px 0;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
     <h1>Plagiarism Checker</h1>
-    <form id="plagiarismForm">
+    
+    <div class="form-group">
+        <label for="original">Original Text:</label>
+        <textarea id="original" name="original" placeholder="Paste the original text here..."></textarea>
+    </div>
+    
+    <div class="form-group">
+        <label for="submission">Text to Check:</label>
+        <textarea id="submission" name="submission" placeholder="Paste the text to check for plagiarism..."></textarea>
+    </div>
+    
+    <button id="checkButton" onclick="checkPlagiarism()">Check for Plagiarism</button>
+    <div id="loading" class="loading">Checking for plagiarism...</div>
+    
+    <div id="results" class="results">
+        <h2>Results</h2>
         <div>
-            <label for="original">Original Text:</label>
-            <textarea id="original" name="original" required placeholder="Paste the original text here..."></textarea>
+            <p>Overall Similarity: <span id="similarity" class="similarity-score"></span></p>
+            <p id="patchwriting-warning" class="warning"></p>
         </div>
-        <div>
-            <label for="submission">Text to Check:</label>
-            <textarea id="submission" name="submission" required placeholder="Paste the text you want to check for plagiarism..."></textarea>
-        </div>
-        <div>
-            <button type="submit">Check for Plagiarism</button>
-        </div>
-    </form>
-    <div id="result"></div>
+        
+        <h3>Similar Sentences</h3>
+        <div id="similar-sentences"></div>
+        
+        <h3>Text Statistics</h3>
+        <div id="text-statistics"></div>
+    </div>
 
     <script>
-        document.getElementById('plagiarismForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        async function checkPlagiarism() {
             const original = document.getElementById('original').value;
             const submission = document.getElementById('submission').value;
+            const button = document.getElementById('checkButton');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            if (original.length < 10 || submission.length < 10) {
+                alert('Both texts must be at least 10 characters long');
+                return;
+            }
             
             try {
+                button.disabled = true;
+                loading.style.display = 'block';
+                results.style.display = 'none';
+                
                 const response = await fetch('/check_plagiarism', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
                     body: JSON.stringify({ original, submission })
                 });
                 
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.detail);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to check plagiarism');
+                }
                 
-                const resultDiv = document.getElementById('result');
-                resultDiv.innerHTML = `
-                    <h2>Results</h2>
-                    <p>Overall Similarity: ${(data.overall_similarity * 100).toFixed(2)}%</p>
-                    <p>Patchwriting Detected: ${data.patchwriting_detected ? 'Yes' : 'No'}</p>
-                    
-                    <h3>Similar Sentences:</h3>
-                    ${data.similar_sentences.map(match => `
-                        <div style="margin-bottom: 10px;">
-                            <p><strong>Submission:</strong> ${match.submission_sentence}</p>
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                alert('Error checking plagiarism: ' + error.message);
+            } finally {
+                button.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+        
+        function displayResults(data) {
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('similarity').textContent = 
+                (data.overall_similarity * 100).toFixed(2) + '%';
+            
+            const warningElement = document.getElementById('patchwriting-warning');
+            if (data.patchwriting_detected) {
+                warningElement.textContent = 'Warning: Potential patchwriting or plagiarism detected!';
+            } else {
+                warningElement.textContent = '';
+            }
+            
+            const similarSentencesDiv = document.getElementById('similar-sentences');
+            if (data.similar_sentences.length === 0) {
+                similarSentencesDiv.innerHTML = '<p>No similar sentences found.</p>';
+            } else {
+                similarSentencesDiv.innerHTML = data.similar_sentences
+                    .map(match => `
+                        <div class="match">
+                            <p><strong>Submitted:</strong> ${match.submission_sentence}</p>
                             <p><strong>Original:</strong> ${match.original_sentence}</p>
                             <p><strong>Similarity:</strong> ${(match.similarity * 100).toFixed(2)}%</p>
                         </div>
-                    `).join('')}
-                    
-                    <h3>Text Statistics:</h3>
-                    <ul>
-                        <li>Word Count: ${data.text_statistics.word_count}</li>
-                        <li>Sentence Count: ${data.text_statistics.sentence_count}</li>
-                        <li>Unique Words: ${data.text_statistics.unique_words}</li>
-                    </ul>
-                `;
-            } catch (error) {
-                alert('Error: ' + error.message);
+                    `).join('');
             }
-        });
+            
+            const statsDiv = document.getElementById('text-statistics');
+            statsDiv.innerHTML = `
+                <p>Word Count: ${data.text_statistics.word_count}</p>
+                <p>Sentence Count: ${data.text_statistics.sentence_count}</p>
+                <p>Average Word Length: ${data.text_statistics.average_word_length.toFixed(2)}</p>
+                <p>Unique Words: ${data.text_statistics.unique_words}</p>
+            `;
+        }
     </script>
 </body>
 </html> 
